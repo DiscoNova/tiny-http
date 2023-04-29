@@ -183,6 +183,18 @@ where
         }
     };
 
+    // true if the client sent a `Connection: close` header
+    let connection_close = {
+        match headers
+            .iter()
+            .find(|h: &&Header| h.field.equiv("Connection"))
+            .map(|h| h.value.as_str())
+        {
+            Some(v) if v.to_ascii_lowercase().contains("close") => true,
+            _ => false,
+        }
+    };
+
     // we wrap `source_data` around a reading whose nature depends on the transfer-encoding and
     // content-length headers
     let reader = if connection_upgrade {
@@ -219,6 +231,9 @@ where
         // if a transfer-encoding was specified, then "chunked" is ALWAYS applied
         // over the message (RFC2616 #3.6)
         Box::new(FusedReader::new(Decoder::new(source_data))) as Box<dyn Read + Send + 'static>
+    } else if expects_continue && connection_close {
+        // ffmpeg's implementation of icecast protocol
+        Box::new(source_data) as Box<dyn Read + Send + 'static>
     } else {
         // if we have neither a Content-Length nor a Transfer-Encoding,
         // assuming that we have no data
